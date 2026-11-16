@@ -1,0 +1,85 @@
+name: Build & Release Naghmeh Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "نسخه ریلیز (اختیاری - مثلا v1.0.1)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Naghmeh APK & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Auto-accept Android SDK licenses (Auto YES)
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMANAGER=$(command -v sdkmanager || find "$SDK_ROOT" -name "sdkmanager" -type f 2>/dev/null | head -n 1)
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          yes | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" > /dev/null || true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+          gradle-home-cache-cleanup: true
+
+      - name: Determine Release Tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.release_tag }}" ]]; then
+            TAG="${{ inputs.release_tag }}"
+          else
+            TAG="v1.0.${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debug APK (Installable on any Android device)
+        working-directory: android
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk "Naghmeh-${{ steps.meta.outputs.tag }}.apk"
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Naghmeh-${{ steps.meta.outputs.tag }}-APK
+          path: android/Naghmeh-${{ steps.meta.outputs.tag }}.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "نغمه — نسخه ${{ steps.meta.outputs.tag }}"
+          body: |
+            فایل نصبی اپلیکیشن **نغمه** آماده نصب مستقیم روی گوشی اندروید است.
+            - فایل پیوست‌شده زیر (`Naghmeh-${{ steps.meta.outputs.tag }}.apk`) را دانلود و نصب کنید.
+          files: |
+            android/Naghmeh-${{ steps.meta.outputs.tag }}.apk
+          draft: false
+          prerelease: false
