@@ -132,11 +132,11 @@ class VoiceRecorderManager(context: Context) {
     private fun cleanupRecorder() {
         try {
             mediaRecorder?.reset()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
         }
         try {
             mediaRecorder?.release()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
         }
         mediaRecorder = null
     }

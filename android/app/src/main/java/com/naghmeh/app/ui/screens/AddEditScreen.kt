@@ -123,7 +123,7 @@ fun AddEditScreen(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: SecurityException) {
+            } catch (e: SecurityException) {
             }
             val displayName = resolveMediaDisplayName(context, uri)
             onAttachFileToMusicSlot(targetKey, uri, displayName)
