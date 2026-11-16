@@ -1,10 +1,12 @@
 package com.naghmeh.app.ui.screens
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -154,22 +156,70 @@ fun AddEditScreen(
         }
     }
 
+    val videoPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_VIDEO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
     val galleryVideoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        val targetKey = activePickerTargetKey
-        if (uri != null && targetKey != null) {
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: SecurityException) {
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = result.data?.data
+            val targetKey = activePickerTargetKey
+            if (uri != null && targetKey != null) {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: SecurityException) {
+                }
+                val displayName = resolveMediaDisplayName(context, uri)
+                onAttachFileToMusicSlot(targetKey, uri, displayName)
             }
-            val displayName = resolveMediaDisplayName(context, uri)
-            onAttachFileToMusicSlot(targetKey, uri, displayName)
         }
         activePickerTargetKey = null
+    }
+
+    fun openGalleryVideo() {
+        val pickIntent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).apply {
+            type = "video/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val targetIntent = if (pickIntent.resolveActivity(context.packageManager) != null) {
+            Intent.createChooser(pickIntent, "انتخاب ویدیو از گالری")
+        } else {
+            val getContentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "video/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            Intent.createChooser(getContentIntent, "انتخاب ویدیو از گالری")
+        }
+
+        try {
+            galleryVideoLauncher.launch(targetIntent)
+        } catch (e: Exception) {
+            try {
+                val fallbackIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "video/*"
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+                galleryVideoLauncher.launch(fallbackIntent)
+            } catch (ignored: Exception) {
+            }
+        }
+    }
+
+    val videoPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            showPickerSourceDialog = false
+            openGalleryVideo()
+        }
     }
 
     val mediaPickerLauncher = rememberLauncherForActivityResult(
@@ -736,8 +786,17 @@ fun AddEditScreen(
 
                     FilledTonalButton(
                         onClick = {
-                            showPickerSourceDialog = false
-                            galleryVideoLauncher.launch("video/*")
+                            val hasPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                videoPermission
+                            ) == PackageManager.PERMISSION_GRANTED
+
+                            if (hasPermission) {
+                                showPickerSourceDialog = false
+                                openGalleryVideo()
+                            } else {
+                                videoPermissionLauncher.launch(videoPermission)
+                            }
                         },
                         shape = RoundedCornerShape(12.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),

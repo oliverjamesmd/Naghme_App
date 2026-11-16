@@ -289,24 +289,21 @@ fun HomeScreen(
                     )
                 }
 
-                OutlinedButton(
+                Surface(
                     onClick = { showCategoryManagerDialog = true },
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    modifier = Modifier.height(42.dp)
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(42.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "دسته جدید / مدیریت",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "مدیریت دسته‌ها",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
 
