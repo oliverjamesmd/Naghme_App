@@ -64,6 +64,7 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                         put("title", item.song.title)
                         put("lyrics", item.song.lyrics)
                         put("categoryId", item.song.categoryId ?: JSONObject.NULL)
+                        put("categoryIds", item.song.categoryIds)
                         put("fontSize", item.song.fontSize.toDouble())
                         put("createdAt", item.song.createdAt)
 
@@ -325,6 +326,12 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                 val lyrics = sObj.optString("lyrics", "")
                 val oldCatId = if (sObj.isNull("categoryId")) null else sObj.optLong("categoryId")
                 val newCatId = oldCatId?.let { categoryIdMap[it] }
+                val oldCatIdsStr = sObj.optString("categoryIds", "")
+                val mappedCategoryIds = oldCatIdsStr.split(",")
+                    .mapNotNull { it.trim().toLongOrNull() }
+                    .mapNotNull { categoryIdMap[it] }
+                val restoredCatIdsStr = mappedCategoryIds.joinToString(",")
+                val primaryCatId = mappedCategoryIds.firstOrNull() ?: newCatId
                 val fontSize = sObj.optDouble("fontSize", 20.0).toFloat()
                 val createdAt = sObj.optLong("createdAt", System.currentTimeMillis())
 
@@ -379,7 +386,8 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                         SongEntity(
                             title = title,
                             lyrics = lyrics,
-                            categoryId = newCatId,
+                            categoryId = primaryCatId,
+                            categoryIds = restoredCatIdsStr,
                             fontSize = fontSize,
                             createdAt = createdAt
                         ),

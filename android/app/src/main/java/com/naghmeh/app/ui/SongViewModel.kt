@@ -49,6 +49,7 @@ data class AddEditUiState(
     val title: String = "",
     val lyrics: String = "",
     val categoryId: Long? = null,
+    val selectedCategoryIds: Set<Long> = emptySet(),
     val musicTracks: List<DraftTrack> = listOf(createEmptyMusicSlot(1)),
     val recordedTracks: List<DraftTrack> = emptyList(),
     val fontSize: Float = 20f,
@@ -133,7 +134,7 @@ class SongViewModel(
     ) { songs, query, categoryId ->
         val trimmed = query.trim()
         songs.filter { item ->
-            val matchesCategory = categoryId == null || item.song.categoryId == categoryId
+            val matchesCategory = categoryId == null || item.song.getAllCategoryIds().contains(categoryId)
             val matchesQuery = trimmed.isEmpty() ||
                 item.song.title.contains(trimmed, ignoreCase = true) ||
                 item.song.lyrics.contains(trimmed, ignoreCase = true)
@@ -202,14 +203,20 @@ class SongViewModel(
         val existing = categories.value.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
         if (existing != null) {
             if (assignToForm) {
-                _addEditState.update { it.copy(categoryId = existing.categoryId) }
+                _addEditState.update { state ->
+                    val updated = state.selectedCategoryIds + existing.categoryId
+                    state.copy(selectedCategoryIds = updated, categoryId = updated.firstOrNull())
+                }
             }
             return
         }
         viewModelScope.launch {
             val insertedId = songDao.insertCategory(CategoryEntity(name = trimmed))
             if (assignToForm) {
-                _addEditState.update { it.copy(categoryId = insertedId) }
+                _addEditState.update { state ->
+                    val updated = state.selectedCategoryIds + insertedId
+                    state.copy(selectedCategoryIds = updated, categoryId = updated.firstOrNull())
+                }
             }
         }
     }
@@ -408,11 +415,13 @@ class SongViewModel(
                         )
                     }
 
+                val catIds = existing.song.getAllCategoryIds()
                 _addEditState.value = AddEditUiState(
                     songId = existing.song.id,
                     title = existing.song.title,
                     lyrics = existing.song.lyrics,
                     categoryId = existing.song.categoryId,
+                    selectedCategoryIds = catIds,
                     musicTracks = music,
                     recordedTracks = recordings,
                     fontSize = existing.song.fontSize,
@@ -434,6 +443,25 @@ class SongViewModel(
 
     fun updateFormCategory(categoryId: Long?) {
         _addEditState.update { it.copy(categoryId = categoryId) }
+    }
+
+    fun clearFormCategories() {
+        _addEditState.update { it.copy(selectedCategoryIds = emptySet(), categoryId = null) }
+    }
+
+    fun toggleFormCategory(categoryId: Long) {
+        _addEditState.update { state ->
+            val updated = state.selectedCategoryIds.toMutableSet()
+            if (updated.contains(categoryId)) {
+                updated.remove(categoryId)
+            } else {
+                updated.add(categoryId)
+            }
+            state.copy(
+                selectedCategoryIds = updated,
+                categoryId = updated.firstOrNull()
+            )
+        }
     }
 
     fun addEmptyMusicTrackSlot() {
@@ -503,11 +531,15 @@ class SongViewModel(
 
         _addEditState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
+            val catIdsStr = state.selectedCategoryIds.joinToString(",")
+            val primaryCatId = state.selectedCategoryIds.firstOrNull() ?: state.categoryId
+
             val songEntity = SongEntity(
                 id = state.songId ?: 0L,
                 title = trimmedTitle,
                 lyrics = trimmedLyrics,
-                categoryId = state.categoryId,
+                categoryId = primaryCatId,
+                categoryIds = catIdsStr,
                 fontSize = state.fontSize,
                 createdAt = if (state.songId != null) state.createdAt else System.currentTimeMillis()
             )

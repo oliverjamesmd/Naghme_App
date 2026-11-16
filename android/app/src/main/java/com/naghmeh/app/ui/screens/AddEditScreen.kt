@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -59,6 +60,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -69,6 +71,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -153,6 +156,48 @@ fun AddEditScreen(
             showDeviceAudioPickerDialog = true
         } else {
             audioPermissionDenied = true
+        }
+    }
+
+    val previewPlayer = remember { MediaPlayer() }
+    var previewPlayingUri by remember { mutableStateOf<Uri?>(null) }
+
+    fun stopPreview() {
+        try {
+            if (previewPlayer.isPlaying) {
+                previewPlayer.stop()
+            }
+            previewPlayer.reset()
+        } catch (e: Exception) {
+        } finally {
+            previewPlayingUri = null
+        }
+    }
+
+    fun startPreview(uri: Uri) {
+        try {
+            stopPreview()
+            previewPlayer.setDataSource(context, uri)
+            previewPlayer.prepare()
+            previewPlayer.start()
+            previewPlayer.setOnCompletionListener {
+                previewPlayingUri = null
+            }
+            previewPlayingUri = uri
+        } catch (e: Exception) {
+            stopPreview()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                if (previewPlayer.isPlaying) {
+                    previewPlayer.stop()
+                }
+                previewPlayer.release()
+            } catch (e: Exception) {
+            }
         }
     }
 
@@ -356,8 +401,12 @@ fun AddEditScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val selectedCategoryIds = uiState.selectedCategoryIds.ifEmpty {
+                        uiState.categoryId?.let { setOf(it) } ?: emptySet()
+                    }
+
                     FilterChip(
-                        selected = uiState.categoryId == null,
+                        selected = selectedCategoryIds.isEmpty(),
                         onClick = { onCategorySelect(null) },
                         label = { Text("بدون دسته", fontSize = 14.sp) },
                         colors = FilterChipDefaults.filterChipColors(
@@ -368,10 +417,19 @@ fun AddEditScreen(
                     )
 
                     categories.forEach { category ->
-                        val selected = uiState.categoryId == category.categoryId
+                        val selected = selectedCategoryIds.contains(category.categoryId)
                         FilterChip(
                             selected = selected,
                             onClick = { onCategorySelect(category.categoryId) },
+                            leadingIcon = if (selected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else null,
                             label = {
                                 Text(
                                     text = category.name,
@@ -865,6 +923,7 @@ fun AddEditScreen(
 
         AlertDialog(
             onDismissRequest = {
+                stopPreview()
                 showDeviceAudioPickerDialog = false
                 activePickerTargetKey = null
             },
@@ -932,6 +991,7 @@ fun AddEditScreen(
                             )
                             OutlinedButton(
                                 onClick = {
+                                    stopPreview()
                                     showDeviceAudioPickerDialog = false
                                     mediaPickerLauncher.launch(arrayOf("audio/*", "video/*"))
                                 },
@@ -955,12 +1015,21 @@ fun AddEditScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             items(filteredAudios) { audio ->
+                                val isThisPreviewPlaying = previewPlayingUri == audio.uri
                                 Surface(
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    color = if (isThisPreviewPlaying) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    },
                                     shape = RoundedCornerShape(10.dp),
+                                    border = if (isThisPreviewPlaying) {
+                                        BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                                    } else null,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
+                                            stopPreview()
                                             activePickerTargetKey?.let { targetKey ->
                                                 onAttachFileToMusicSlot(
                                                     targetKey,
@@ -975,15 +1044,37 @@ fun AddEditScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(10.dp),
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.MusicNote,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        FilledTonalIconButton(
+                                            onClick = {
+                                                if (isThisPreviewPlaying) {
+                                                    stopPreview()
+                                                } else {
+                                                    startPreview(audio.uri)
+                                                }
+                                            },
+                                            modifier = Modifier.size(38.dp),
+                                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                containerColor = if (isThisPreviewPlaying) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                },
+                                                contentColor = if (isThisPreviewPlaying) {
+                                                    MaterialTheme.colorScheme.onPrimary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                                }
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isThisPreviewPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                                contentDescription = if (isThisPreviewPlaying) "توقف پخش" else "گوش دادن به آهنگ",
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
@@ -1004,9 +1095,13 @@ fun AddEditScreen(
                                                 String.format(Locale.US, "%02d:%02d", m, s)
                                             }
                                             Text(
-                                                text = subText,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                text = if (isThisPreviewPlaying) "در حال پخش پیش‌نمایش..." else subText,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (isThisPreviewPlaying) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
                                             )
                                         }
                                     }
@@ -1020,6 +1115,7 @@ fun AddEditScreen(
             dismissButton = {
                 OutlinedButton(
                     onClick = {
+                        stopPreview()
                         showDeviceAudioPickerDialog = false
                         activePickerTargetKey = null
                     }

@@ -211,7 +211,13 @@ private fun NaghmehNavGraph(viewModel: SongViewModel) {
                 onToggleTheme = viewModel::toggleTheme,
                 onTitleChange = viewModel::updateFormTitle,
                 onLyricsChange = viewModel::updateFormLyrics,
-                onCategorySelect = viewModel::updateFormCategory,
+                onCategorySelect = { catId ->
+                    if (catId == null) {
+                        viewModel.clearFormCategories()
+                    } else {
+                        viewModel.toggleFormCategory(catId)
+                    }
+                },
                 onCreateAndSelectCategory = { name -> viewModel.createCategory(name, assignToForm = true) },
                 onAddMusicSlot = viewModel::addEmptyMusicTrackSlot,
                 onUpdateMusicTitle = viewModel::updateMusicTrackTitle,

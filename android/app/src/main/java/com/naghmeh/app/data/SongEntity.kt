@@ -10,6 +10,17 @@ data class SongEntity(
     val title: String,
     val lyrics: String,
     val categoryId: Long? = null,
+    val categoryIds: String = "",
     val fontSize: Float = 20f,
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    fun getAllCategoryIds(): Set<Long> {
+        val ids = categoryIds.split(",")
+            .mapNotNull { it.trim().toLongOrNull() }
+            .toMutableSet()
+        if (categoryId != null && categoryId > 0L) {
+            ids.add(categoryId)
+        }
+        return ids
+    }
+}

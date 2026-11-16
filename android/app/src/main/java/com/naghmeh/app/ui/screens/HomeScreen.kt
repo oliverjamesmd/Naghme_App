@@ -348,7 +348,10 @@ fun HomeScreen(
                         items = songs,
                         key = { it.song.id }
                     ) { item ->
-                        val categoryName = item.song.categoryId?.let { categoryMap[it]?.name }
+                        val categoryName = remember(item.song, categoryMap) {
+                            val names = item.song.getAllCategoryIds().mapNotNull { categoryMap[it]?.name }
+                            if (names.isNotEmpty()) names.joinToString(" • ") else null
+                        }
                         SongListCard(
                             songWithTracks = item,
                             categoryName = categoryName,
