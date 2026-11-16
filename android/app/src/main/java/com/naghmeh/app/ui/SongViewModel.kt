@@ -592,6 +592,26 @@ class SongViewModel(
         }
     }
 
+    fun saveBackupToDownloads() {
+        viewModelScope.launch {
+            _isBackupLoading.value = true
+            _backupOperationMessage.value = null
+            try {
+                val result = backupManager.saveBackupToDownloads()
+                if (result.isSuccess) {
+                    val fileName = result.getOrNull() ?: "naghmeh_backup.zip"
+                    _backupOperationMessage.value = "فایل پشتیبان با موفقیت در پوشه Downloads گوشی ذخیره شد:\n$fileName"
+                } else {
+                    _backupOperationMessage.value = result.exceptionOrNull()?.message ?: "خطا در ذخیره فایل در دانلودها."
+                }
+            } catch (e: Exception) {
+                _backupOperationMessage.value = "خطا در ذخیره فایل: ${e.localizedMessage}"
+            } finally {
+                _isBackupLoading.value = false
+            }
+        }
+    }
+
     fun clearBackupShareUri() {
         _backupUriToShare.value = null
     }

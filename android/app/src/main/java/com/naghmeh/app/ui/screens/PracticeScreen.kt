@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -459,25 +460,31 @@ private fun RehearsalPlayerDock(
                                     shape = CircleShape,
                                     color = containerColor,
                                     contentColor = contentColor,
-                                    modifier = Modifier.height(28.dp)
+                                    modifier = Modifier.height(30.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                        modifier = Modifier.padding(horizontal = 10.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.padding(horizontal = 12.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = if (isRec) Icons.Rounded.Mic else Icons.Rounded.MusicNote,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(12.dp)
-                                        )
+                                        if (isRec) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Mic,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(13.dp)
+                                                    .offset(y = (-1).dp)
+                                            )
+                                        }
                                         Text(
                                             text = track.title,
                                             fontSize = 12.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.widthIn(max = 150.dp)
+                                            modifier = Modifier
+                                                .widthIn(max = 150.dp)
+                                                .offset(y = (-1.5).dp)
                                         )
                                     }
                                 }

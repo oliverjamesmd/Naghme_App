@@ -1,7 +1,12 @@
 package com.naghmeh.app.backup
 
+import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import com.naghmeh.app.data.CategoryEntity
 import com.naghmeh.app.data.MediaTrackEntity
@@ -32,7 +37,7 @@ data class RestoreSummary(
 
 class BackupManager(private val context: Context, private val songDao: SongDao) {
 
-    suspend fun createBackupZip(): Uri? = withContext(Dispatchers.IO) {
+    private suspend fun generateBackupZipFile(): File? = withContext(Dispatchers.IO) {
         try {
             val categories = songDao.getAllCategoriesList()
             val songsWithTracks = songDao.getAllSongsWithTracksList()
@@ -75,6 +80,9 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                                         t.uriString.contains(".mkv", ignoreCase = true) -> "mkv"
                                         t.uriString.contains(".wav", ignoreCase = true) -> "wav"
                                         t.uriString.contains(".m4a", ignoreCase = true) -> "m4a"
+                                        t.uriString.contains(".aac", ignoreCase = true) -> "aac"
+                                        t.uriString.contains(".ogg", ignoreCase = true) -> "ogg"
+                                        t.uriString.contains(".flac", ignoreCase = true) -> "flac"
                                         else -> "mp3"
                                     }
                                     val zipEntryName = "media/track_${item.song.id}_${t.trackId}_${System.nanoTime()}.$safeExt"
@@ -169,13 +177,72 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                 }
             }
 
+            zipFile
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun createBackupZip(): Uri? = withContext(Dispatchers.IO) {
+        val file = generateBackupZipFile() ?: return@withContext null
+        try {
             FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
-                zipFile
+                file
             )
         } catch (e: Exception) {
             null
+        }
+    }
+
+    suspend fun saveBackupToDownloads(): Result<String> = withContext(Dispatchers.IO) {
+        val sourceFile = generateBackupZipFile()
+            ?: return@withContext Result.failure(Exception("خطا در ایجاد بسته پشتیبان."))
+
+        val fileName = sourceFile.name
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+
+                val downloadUri = context.contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    contentValues
+                ) ?: return@withContext Result.failure(Exception("امکان ایجاد فایل در Downloads فراهم نشد."))
+
+                context.contentResolver.openOutputStream(downloadUri)?.use { out ->
+                    FileInputStream(sourceFile).use { inStream ->
+                        inStream.copyTo(out)
+                    }
+                } ?: return@withContext Result.failure(Exception("نوشتن در پوشه Downloads امکان‌پذیر نشد."))
+
+                Result.success(fileName)
+            } else {
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!downloadsDir.exists()) {
+                    downloadsDir.mkdirs()
+                }
+                val destFile = File(downloadsDir, fileName)
+                FileInputStream(sourceFile).use { inStream ->
+                    FileOutputStream(destFile).use { outStream ->
+                        inStream.copyTo(outStream)
+                    }
+                }
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(destFile.absolutePath),
+                    arrayOf("application/zip"),
+                    null
+                )
+                Result.success(fileName)
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("خطا در ذخیره در دانلودها: ${e.localizedMessage ?: "دسترسی مجاز نیست"}"))
         }
     }
 

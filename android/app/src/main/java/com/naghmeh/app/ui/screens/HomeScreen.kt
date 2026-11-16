@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,11 +32,13 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,6 +47,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -95,6 +99,7 @@ fun HomeScreen(
     onAddClick: () -> Unit,
     onDeleteConfirm: (SongWithTracks) -> Unit,
     onCreateBackup: () -> Unit = {},
+    onSaveBackupToDownloads: () -> Unit = {},
     onRestoreBackup: (Uri) -> Unit = {},
     onClearBackupShareUri: () -> Unit = {},
     onClearBackupMessage: () -> Unit = {}
@@ -558,21 +563,42 @@ fun HomeScreen(
                     } else {
                         Button(
                             onClick = {
-                                onCreateBackup()
+                                onSaveBackupToDownloads()
                                 showBackupDialog = false
                             },
                             shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
+                                .heightIn(min = 50.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.CloudUpload,
+                                imageVector = Icons.Rounded.Download,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "تهیه فایل پشتیبان (اشتراک‌گذاری)", fontWeight = FontWeight.Bold)
+                            Text(text = "ذخیره فایل پشتیبان در دانلودها", fontWeight = FontWeight.Bold)
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                onCreateBackup()
+                                showBackupDialog = false
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 50.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "ارسال و اشتراک‌گذاری پشتیبان", fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -588,9 +614,10 @@ fun HomeScreen(
                                 showBackupDialog = false
                             },
                             shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
+                                .heightIn(min = 50.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.CloudDownload,

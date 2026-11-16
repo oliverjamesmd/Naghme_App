@@ -128,6 +128,7 @@ private fun NaghmehNavGraph(viewModel: SongViewModel) {
                 backupOperationMessage = backupOperationMessage,
                 backupUriToShare = backupUriToShare,
                 onCreateBackup = viewModel::createBackup,
+                onSaveBackupToDownloads = viewModel::saveBackupToDownloads,
                 onRestoreBackup = viewModel::restoreBackup,
                 onClearBackupShareUri = viewModel::clearBackupShareUri,
                 onClearBackupMessage = viewModel::clearBackupMessage
