@@ -92,6 +92,11 @@ private fun NaghmehNavGraph(viewModel: SongViewModel) {
     val recordingDurationSec by viewModel.recordingDurationSec.collectAsStateWithLifecycle()
     val recorderError by viewModel.recorderError.collectAsStateWithLifecycle()
     val inlinePlayingKey by viewModel.inlinePlayingKey.collectAsStateWithLifecycle()
+    val isBackupLoading by viewModel.isBackupLoading.collectAsStateWithLifecycle()
+    val backupOperationMessage by viewModel.backupOperationMessage.collectAsStateWithLifecycle()
+    val backupUriToShare by viewModel.backupUriToShare.collectAsStateWithLifecycle()
+    val deviceAudios by viewModel.deviceAudios.collectAsStateWithLifecycle()
+    val isScanningAudios by viewModel.isScanningAudios.collectAsStateWithLifecycle()
 
     NavHost(
         navController = navController,
@@ -118,7 +123,14 @@ private fun NaghmehNavGraph(viewModel: SongViewModel) {
                 onAddClick = {
                     navController.navigate(Routes.addEdit())
                 },
-                onDeleteConfirm = viewModel::deleteSong
+                onDeleteConfirm = viewModel::deleteSong,
+                isBackupLoading = isBackupLoading,
+                backupOperationMessage = backupOperationMessage,
+                backupUriToShare = backupUriToShare,
+                onCreateBackup = viewModel::createBackup,
+                onRestoreBackup = viewModel::restoreBackup,
+                onClearBackupShareUri = viewModel::clearBackupShareUri,
+                onClearBackupMessage = viewModel::clearBackupMessage
             )
         }
 
@@ -192,6 +204,9 @@ private fun NaghmehNavGraph(viewModel: SongViewModel) {
                 recorderError = recorderError,
                 inlinePlayingKey = inlinePlayingKey,
                 isAudioPlaying = isPlaying,
+                deviceAudios = deviceAudios,
+                isScanningAudios = isScanningAudios,
+                onLoadDeviceAudios = viewModel::loadDeviceAudios,
                 onToggleTheme = viewModel::toggleTheme,
                 onTitleChange = viewModel::updateFormTitle,
                 onLyricsChange = viewModel::updateFormLyrics,

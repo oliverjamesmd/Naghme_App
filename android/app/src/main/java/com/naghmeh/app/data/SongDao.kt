@@ -15,6 +15,9 @@ interface SongDao {
     @Query("SELECT * FROM categories ORDER BY createdAt ASC")
     fun getAllCategoriesFlow(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM categories ORDER BY createdAt ASC")
+    suspend fun getAllCategoriesList(): List<CategoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: CategoryEntity): Long
 
@@ -33,6 +36,10 @@ interface SongDao {
     @Transaction
     @Query("SELECT * FROM songs ORDER BY createdAt DESC")
     fun getAllSongsWithTracksFlow(): Flow<List<SongWithTracks>>
+
+    @Transaction
+    @Query("SELECT * FROM songs ORDER BY createdAt DESC")
+    suspend fun getAllSongsWithTracksList(): List<SongWithTracks>
 
     @Transaction
     @Query("SELECT * FROM songs WHERE id = :id LIMIT 1")

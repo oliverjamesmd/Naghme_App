@@ -1,5 +1,9 @@
 package com.naghmeh.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -21,7 +25,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
@@ -34,6 +41,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -50,12 +58,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +82,9 @@ fun HomeScreen(
     selectedCategoryId: Long?,
     searchQuery: String,
     isDarkTheme: Boolean,
+    isBackupLoading: Boolean = false,
+    backupOperationMessage: String? = null,
+    backupUriToShare: Uri? = null,
     onToggleTheme: () -> Unit,
     onSelectCategory: (Long?) -> Unit,
     onCreateCategory: (String) -> Unit,
@@ -80,12 +93,38 @@ fun HomeScreen(
     onSongClick: (Long) -> Unit,
     onEditClick: (Long) -> Unit,
     onAddClick: () -> Unit,
-    onDeleteConfirm: (SongWithTracks) -> Unit
+    onDeleteConfirm: (SongWithTracks) -> Unit,
+    onCreateBackup: () -> Unit = {},
+    onRestoreBackup: (Uri) -> Unit = {},
+    onClearBackupShareUri: () -> Unit = {},
+    onClearBackupMessage: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var songPendingDeletion by remember { mutableStateOf<SongWithTracks?>(null) }
     var categoryPendingDeletion by remember { mutableStateOf<CategoryEntity?>(null) }
     var showCategoryManagerDialog by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onRestoreBackup(uri)
+        }
+    }
+
+    LaunchedEffect(backupUriToShare) {
+        backupUriToShare?.let { uri ->
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "اشتراک‌گذاری و ذخیره فایل پشتیبان"))
+            onClearBackupShareUri()
+        }
+    }
 
     val categoryMap = remember(categories) {
         categories.associateBy { it.categoryId }
@@ -103,6 +142,16 @@ fun HomeScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showBackupDialog = true },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Backup,
+                            contentDescription = "پشتیبان‌گیری و بازیابی",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(
                         onClick = onToggleTheme,
                         modifier = Modifier.size(48.dp)
@@ -467,6 +516,118 @@ fun HomeScreen(
                     modifier = Modifier.height(48.dp)
                 ) {
                     Text(text = "انصراف")
+                }
+            }
+        )
+    }
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isBackupLoading) showBackupDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "پشتیبان‌گیری و بازیابی",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = "می‌توانید از تمام شعرها، دسته‌ها و صداهای ضبط‌شده فایل پشتیبان تهیه کنید، یا فایل قبلی خود را بازیابی نمایید.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (isBackupLoading) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(text = "در حال پردازش فایل...")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                onCreateBackup()
+                                showBackupDialog = false
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudUpload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "تهیه فایل پشتیبان (اشتراک‌گذاری)", fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                restoreLauncher.launch(
+                                    arrayOf(
+                                        "application/zip",
+                                        "application/x-zip-compressed",
+                                        "application/json",
+                                        "*/*"
+                                    )
+                                )
+                                showBackupDialog = false
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "بازیابی اطلاعات از فایل", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showBackupDialog = false },
+                    enabled = !isBackupLoading
+                ) {
+                    Text(text = "بستن")
+                }
+            }
+        )
+    }
+
+    backupOperationMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = onClearBackupMessage,
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(text = "پیام سیستم", style = MaterialTheme.typography.titleLarge)
+            },
+            text = {
+                Text(text = msg, style = MaterialTheme.typography.bodyLarge)
+            },
+            confirmButton = {
+                Button(onClick = onClearBackupMessage) {
+                    Text(text = "متوجه شدم", fontWeight = FontWeight.Bold)
                 }
             }
         )

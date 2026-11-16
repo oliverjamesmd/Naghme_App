@@ -9,6 +9,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,15 +35,20 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -72,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.naghmeh.app.audio.DeviceAudioItem
 import com.naghmeh.app.data.CategoryEntity
 import com.naghmeh.app.data.TrackType
 import com.naghmeh.app.ui.AddEditUiState
@@ -89,6 +98,9 @@ fun AddEditScreen(
     recorderError: String?,
     inlinePlayingKey: String?,
     isAudioPlaying: Boolean,
+    deviceAudios: List<DeviceAudioItem> = emptyList(),
+    isScanningAudios: Boolean = false,
+    onLoadDeviceAudios: () -> Unit = {},
     onToggleTheme: () -> Unit,
     onTitleChange: (String) -> Unit,
     onLyricsChange: (String) -> Unit,
@@ -108,10 +120,31 @@ fun AddEditScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var activePickerTargetKey by remember { mutableStateOf<String?>(null) }
+    var showPickerSourceDialog by remember { mutableStateOf(false) }
+    var showDeviceAudioPickerDialog by remember { mutableStateOf(false) }
+    var audioSearchQuery by remember { mutableStateOf("") }
     var micPermissionError by remember { mutableStateOf<String?>(null) }
     var showInlineCategoryInput by remember { mutableStateOf(false) }
     var newCategoryDraft by remember { mutableStateOf("") }
     var trackPendingDeletion by remember { mutableStateOf<Pair<TrackType, DraftTrack>?>(null) }
+
+    val galleryVideoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        val targetKey = activePickerTargetKey
+        if (uri != null && targetKey != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: SecurityException) {
+            }
+            val displayName = resolveMediaDisplayName(context, uri)
+            onAttachFileToMusicSlot(targetKey, uri, displayName)
+        }
+        activePickerTargetKey = null
+    }
 
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -412,7 +445,7 @@ fun AddEditScreen(
                             onTitleChange = { onUpdateMusicTitle(track.localKey, it) },
                             onPickFile = {
                                 activePickerTargetKey = track.localKey
-                                mediaPickerLauncher.launch(arrayOf("audio/*", "video/*"))
+                                showPickerSourceDialog = true
                             },
                             onRemove = { trackPendingDeletion = TrackType.MUSIC to track }
                         )
@@ -605,6 +638,254 @@ fun AddEditScreen(
                 OutlinedButton(
                     onClick = { trackPendingDeletion = null },
                     modifier = Modifier.height(48.dp)
+                ) {
+                    Text(text = "انصراف")
+                }
+            }
+        )
+    }
+
+    if (showPickerSourceDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showPickerSourceDialog = false
+                activePickerTargetKey = null
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "انتخاب فایل همراهی",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "منبع مورد نظر برای انتخاب فایل را مشخص کنید:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    FilledTonalButton(
+                        onClick = {
+                            showPickerSourceDialog = false
+                            audioSearchQuery = ""
+                            onLoadDeviceAudios()
+                            showDeviceAudioPickerDialog = true
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.QueueMusic,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "آهنگ‌های گوشی (فهرست و جستجو)", fontWeight = FontWeight.Bold)
+                    }
+
+                    FilledTonalButton(
+                        onClick = {
+                            showPickerSourceDialog = false
+                            galleryVideoLauncher.launch("video/*")
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.VideoLibrary,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "انتخاب ویدیو از گالری", fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showPickerSourceDialog = false
+                            mediaPickerLauncher.launch(arrayOf("audio/*", "video/*"))
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "پوشه‌ها و فایل‌منیجر گوشی")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showPickerSourceDialog = false
+                        activePickerTargetKey = null
+                    }
+                ) {
+                    Text(text = "انصراف")
+                }
+            }
+        )
+    }
+
+    if (showDeviceAudioPickerDialog) {
+        val filteredAudios = remember(deviceAudios, audioSearchQuery) {
+            val q = audioSearchQuery.trim()
+            if (q.isEmpty()) {
+                deviceAudios
+            } else {
+                deviceAudios.filter {
+                    it.title.contains(q, ignoreCase = true) ||
+                        it.artist.contains(q, ignoreCase = true) ||
+                        it.displayName.contains(q, ignoreCase = true)
+                }
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                showDeviceAudioPickerDialog = false
+                activePickerTargetKey = null
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "آهنگ‌های شناسایی‌شده در گوشی",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = audioSearchQuery,
+                        onValueChange = { audioSearchQuery = it },
+                        placeholder = { Text("جستجو در نام آهنگ یا خواننده...") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (isScanningAudios) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = "در حال بارگذاری آهنگ‌ها...")
+                        }
+                    } else if (filteredAudios.isEmpty()) {
+                        Text(
+                            text = if (audioSearchQuery.isBlank()) "هیچ فایل صوتی در گوشی یافت نشد." else "آهنگی با این نام پیدا نشد.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filteredAudios) { audio ->
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            activePickerTargetKey?.let { targetKey ->
+                                                onAttachFileToMusicSlot(
+                                                    targetKey,
+                                                    audio.uri,
+                                                    audio.displayName
+                                                )
+                                            }
+                                            showDeviceAudioPickerDialog = false
+                                            activePickerTargetKey = null
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.MusicNote,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = audio.title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val subText = if (audio.artist.isNotBlank()) {
+                                                val totalSec = audio.durationMs / 1000
+                                                val m = totalSec / 60
+                                                val s = totalSec % 60
+                                                "${audio.artist} • ${String.format(Locale.US, "%02d:%02d", m, s)}"
+                                            } else {
+                                                val totalSec = audio.durationMs / 1000
+                                                val m = totalSec / 60
+                                                val s = totalSec % 60
+                                                String.format(Locale.US, "%02d:%02d", m, s)
+                                            }
+                                            Text(
+                                                text = subText,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showDeviceAudioPickerDialog = false
+                        activePickerTargetKey = null
+                    }
                 ) {
                     Text(text = "انصراف")
                 }

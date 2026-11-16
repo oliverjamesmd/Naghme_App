@@ -6,7 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.naghmeh.app.audio.AudioPlayerManager
+import com.naghmeh.app.audio.DeviceAudioItem
+import com.naghmeh.app.audio.DeviceMediaManager
 import com.naghmeh.app.audio.VoiceRecorderManager
+import com.naghmeh.app.backup.BackupManager
 import com.naghmeh.app.data.CategoryEntity
 import com.naghmeh.app.data.MediaTrackEntity
 import com.naghmeh.app.data.SongDao
@@ -76,6 +79,24 @@ class SongViewModel(
 ) : ViewModel() {
 
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val backupManager = BackupManager(appContext, songDao)
+    private val deviceMediaManager = DeviceMediaManager(appContext)
+
+    private val _deviceAudios = MutableStateFlow<List<DeviceAudioItem>>(emptyList())
+    val deviceAudios: StateFlow<List<DeviceAudioItem>> = _deviceAudios.asStateFlow()
+
+    private val _isScanningAudios = MutableStateFlow(false)
+    val isScanningAudios: StateFlow<Boolean> = _isScanningAudios.asStateFlow()
+
+    private val _backupUriToShare = MutableStateFlow<Uri?>(null)
+    val backupUriToShare: StateFlow<Uri?> = _backupUriToShare.asStateFlow()
+
+    private val _backupOperationMessage = MutableStateFlow<String?>(null)
+    val backupOperationMessage: StateFlow<String?> = _backupOperationMessage.asStateFlow()
+
+    private val _isBackupLoading = MutableStateFlow(false)
+    val isBackupLoading: StateFlow<Boolean> = _isBackupLoading.asStateFlow()
 
     private val _isDarkTheme = MutableStateFlow(prefs.getBoolean(KEY_DARK_THEME, false))
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
@@ -539,6 +560,65 @@ class SongViewModel(
                 }
             songDao.deleteSong(songWithTracks.song)
         }
+    }
+
+    fun loadDeviceAudios() {
+        viewModelScope.launch {
+            _isScanningAudios.value = true
+            try {
+                _deviceAudios.value = deviceMediaManager.loadDeviceAudios()
+            } finally {
+                _isScanningAudios.value = false
+            }
+        }
+    }
+
+    fun createBackup() {
+        viewModelScope.launch {
+            _isBackupLoading.value = true
+            _backupOperationMessage.value = null
+            try {
+                val uri = backupManager.createBackupZip()
+                if (uri != null) {
+                    _backupUriToShare.value = uri
+                } else {
+                    _backupOperationMessage.value = "ایجاد فایل پشتیبان با خطا مواجه شد."
+                }
+            } catch (e: Exception) {
+                _backupOperationMessage.value = "خطا در تهیه پشتیبان: ${e.localizedMessage}"
+            } finally {
+                _isBackupLoading.value = false
+            }
+        }
+    }
+
+    fun clearBackupShareUri() {
+        _backupUriToShare.value = null
+    }
+
+    fun restoreBackup(uri: Uri) {
+        viewModelScope.launch {
+            _isBackupLoading.value = true
+            _backupOperationMessage.value = null
+            try {
+                val result = backupManager.restoreFromBackup(uri)
+                if (result.isSuccess) {
+                    val summary = result.getOrNull()
+                    val count = summary?.songsCount ?: 0
+                    _backupOperationMessage.value = "بازیابی با موفقیت انجام شد ($count شعر بازگردانده شد)."
+                } else {
+                    _backupOperationMessage.value = result.exceptionOrNull()?.message ?: "خطا در بازیابی فایل."
+                }
+            } catch (e: Exception) {
+                _backupOperationMessage.value = "خطا در خواندن فایل پشتیبان: ${e.localizedMessage}"
+            } finally {
+                _isBackupLoading.value = false
+            }
+        }
+    }
+
+    fun clearBackupMessage() {
+        _backupOperationMessage.value = null
     }
 
     override fun onCleared() {
