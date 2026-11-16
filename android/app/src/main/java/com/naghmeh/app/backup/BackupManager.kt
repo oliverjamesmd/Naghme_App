@@ -7,18 +7,16 @@ import com.naghmeh.app.data.CategoryEntity
 import com.naghmeh.app.data.MediaTrackEntity
 import com.naghmeh.app.data.SongDao
 import com.naghmeh.app.data.SongEntity
-import com.naghmeh.app.data.SongWithTracks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
-import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -28,7 +26,8 @@ import java.util.zip.ZipOutputStream
 
 data class RestoreSummary(
     val songsCount: Int,
-    val categoriesCount: Int
+    val categoriesCount: Int,
+    val mediaFilesCount: Int
 )
 
 class BackupManager(private val context: Context, private val songDao: SongDao) {
@@ -38,23 +37,22 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
             val categories = songDao.getAllCategoriesList()
             val songsWithTracks = songDao.getAllSongsWithTracksList()
 
-            // 1. Build JSON
-            val rootJson = JSONObject().apply {
-                put("app", "naghmeh")
-                put("version", 1)
-                put("createdAt", System.currentTimeMillis())
+            val backupsDir = File(context.cacheDir, "backups").apply {
+                if (!exists()) mkdirs()
+            }
+            backupsDir.listFiles()?.forEach { it.delete() }
 
-                val catArray = JSONArray()
-                categories.forEach { cat ->
-                    catArray.put(JSONObject().apply {
-                        put("categoryId", cat.categoryId)
-                        put("name", cat.name)
-                        put("createdAt", cat.createdAt)
-                    })
-                }
-                put("categories", catArray)
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val zipFile = File(backupsDir, "naghmeh_backup_$timestamp.zip")
 
+            val tracksDir = File(context.filesDir, "tracks").apply {
+                if (!exists()) mkdirs()
+            }
+
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
                 val songArray = JSONArray()
+
+                // Process songs and bundle their attached media files
                 songsWithTracks.forEach { item ->
                     val sJson = JSONObject().apply {
                         put("id", item.song.id)
@@ -66,10 +64,63 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
 
                         val trackArray = JSONArray()
                         item.tracks.forEach { t ->
+                            var bundledFileName: String? = null
+
+                            // If track has a valid URI, try bundling the actual audio/video file into the ZIP
+                            if (t.uriString.isNotBlank()) {
+                                try {
+                                    val uri = Uri.parse(t.uriString)
+                                    val safeExt = when {
+                                        t.uriString.contains(".mp4", ignoreCase = true) -> "mp4"
+                                        t.uriString.contains(".mkv", ignoreCase = true) -> "mkv"
+                                        t.uriString.contains(".wav", ignoreCase = true) -> "wav"
+                                        t.uriString.contains(".m4a", ignoreCase = true) -> "m4a"
+                                        else -> "mp3"
+                                    }
+                                    val zipEntryName = "media/track_${item.song.id}_${t.trackId}_${System.nanoTime()}.$safeExt"
+
+                                    val inputStream = try {
+                                        when {
+                                            uri.scheme == "content" -> context.contentResolver.openInputStream(uri)
+                                            uri.scheme == "file" -> {
+                                                val f = File(uri.path ?: "")
+                                                if (f.exists()) FileInputStream(f) else null
+                                            }
+                                            uri.path != null -> {
+                                                val f = File(uri.path ?: "")
+                                                if (f.exists()) FileInputStream(f) else null
+                                            }
+                                            else -> {
+                                                val f = File(t.uriString)
+                                                if (f.exists()) FileInputStream(f) else null
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+
+                                    if (inputStream != null) {
+                                        try {
+                                            zos.putNextEntry(ZipEntry(zipEntryName))
+                                            inputStream.use { input ->
+                                                input.copyTo(zos)
+                                            }
+                                            zos.closeEntry()
+                                            bundledFileName = zipEntryName
+                                        } catch (e: Exception) {
+                                            try { zos.closeEntry() } catch (ignored: Exception) {}
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    // Fallback: keep original URI if file streaming fails
+                                }
+                            }
+
                             trackArray.put(JSONObject().apply {
                                 put("trackId", t.trackId)
                                 put("title", t.title)
                                 put("uriString", t.uriString)
+                                put("bundledFileName", bundledFileName ?: JSONObject.NULL)
                                 put("trackType", t.trackType)
                                 put("durationSec", t.durationSec)
                                 put("displayTimestamp", t.displayTimestamp)
@@ -80,26 +131,30 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                     }
                     songArray.put(sJson)
                 }
-                put("songs", songArray)
-            }
 
-            // 2. Prepare Zip File in cache/backups
-            val backupsDir = File(context.cacheDir, "backups").apply {
-                if (!exists()) mkdirs()
-            }
-            // clean previous backups in cache
-            backupsDir.listFiles()?.forEach { it.delete() }
+                // 1. Build & write root JSON
+                val rootJson = JSONObject().apply {
+                    put("app", "naghmeh")
+                    put("version", 2)
+                    put("createdAt", System.currentTimeMillis())
 
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val zipFile = File(backupsDir, "naghmeh_backup_$timestamp.zip")
+                    val catArray = JSONArray()
+                    categories.forEach { cat ->
+                        catArray.put(JSONObject().apply {
+                            put("categoryId", cat.categoryId)
+                            put("name", cat.name)
+                            put("createdAt", cat.createdAt)
+                        })
+                    }
+                    put("categories", catArray)
+                    put("songs", songArray)
+                }
 
-            ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
-                // Add data.json
                 zos.putNextEntry(ZipEntry("naghmeh_data.json"))
                 zos.write(rootJson.toString(2).toByteArray(Charsets.UTF_8))
                 zos.closeEntry()
 
-                // Add in-app voice recordings
+                // 2. Also bundle voice practice recordings
                 val recordingsDir = File(context.filesDir, "recordings")
                 if (recordingsDir.exists()) {
                     recordingsDir.listFiles()?.forEach { recFile ->
@@ -114,7 +169,6 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                 }
             }
 
-            // 3. Generate Shareable Uri via FileProvider
             FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -131,16 +185,18 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
             val recordingsDir = File(context.filesDir, "recordings").apply {
                 if (!exists()) mkdirs()
             }
+            val restoredTracksDir = File(context.filesDir, "tracks").apply {
+                if (!exists()) mkdirs()
+            }
 
-            // Try reading as ZIP first
-            val isZip = context.contentResolver.openInputStream(backupUri)?.use { rawIn ->
+            var mediaRestoredCount = 0
+
+            context.contentResolver.openInputStream(backupUri)?.use { rawIn ->
                 val zis = ZipInputStream(BufferedInputStream(rawIn))
                 var entry = zis.nextEntry
-                var foundAnyZipEntry = false
                 while (entry != null) {
-                    foundAnyZipEntry = true
                     if (entry.name == "naghmeh_data.json" || entry.name.endsWith(".json")) {
-                        val baos = java.io.ByteArrayOutputStream()
+                        val baos = ByteArrayOutputStream()
                         val buf = ByteArray(4096)
                         var readLen: Int
                         while (zis.read(buf).also { readLen = it } > 0) {
@@ -153,21 +209,21 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                         FileOutputStream(targetRec).use { fos ->
                             zis.copyTo(fos)
                         }
+                        mediaRestoredCount++
+                    } else if (entry.name.startsWith("media/") && !entry.isDirectory) {
+                        val fileName = File(entry.name).name
+                        val targetFile = File(restoredTracksDir, fileName)
+                        FileOutputStream(targetFile).use { fos ->
+                            zis.copyTo(fos)
+                        }
+                        mediaRestoredCount++
                     }
                     entry = zis.nextEntry
-                }
-                foundAnyZipEntry
-            } ?: false
-
-            // Fallback: If not zip or json not found in zip, try reading as raw JSON
-            if (jsonContent.isNullOrBlank()) {
-                context.contentResolver.openInputStream(backupUri)?.use { rawIn ->
-                    jsonContent = BufferedReader(InputStreamReader(rawIn, Charsets.UTF_8)).readText()
                 }
             }
 
             if (jsonContent.isNullOrBlank()) {
-                return@withContext Result.failure(Exception("فایل پشتیبان خالی یا نامعتبر است."))
+                return@withContext Result.failure(Exception("فایل پشتیبان نامعتبر است یا اطلاعاتی در آن یافت نشد."))
             }
 
             val rootJson = JSONObject(jsonContent!!)
@@ -212,16 +268,37 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                     for (tIdx in 0 until trackArray.length()) {
                         val tObj = trackArray.getJSONObject(tIdx)
                         val tTitle = tObj.optString("title", "آهنگ")
-                        val uriStr = tObj.optString("uriString", "")
+                        val originalUriStr = tObj.optString("uriString", "")
+                        val bundledFileName = if (tObj.isNull("bundledFileName")) null else tObj.optString("bundledFileName")
                         val tType = tObj.optString("trackType", "MUSIC")
                         val durationSec = tObj.optLong("durationSec", 0L)
                         val displayTs = tObj.optString("displayTimestamp", "")
                         val tCreatedAt = tObj.optLong("createdAt", System.currentTimeMillis())
 
+                        // If file was bundled in zip, point to restored local file
+                        val effectiveUriStr = if (!bundledFileName.isNullOrBlank()) {
+                            val localFile = File(restoredTracksDir, File(bundledFileName).name)
+                            if (localFile.exists()) {
+                                Uri.fromFile(localFile).toString()
+                            } else {
+                                originalUriStr
+                            }
+                        } else if (tType == "RECORDING") {
+                            val recFileName = File(Uri.parse(originalUriStr).path ?: "").name
+                            val localRecFile = File(recordingsDir, recFileName)
+                            if (localRecFile.exists()) {
+                                Uri.fromFile(localRecFile).toString()
+                            } else {
+                                originalUriStr
+                            }
+                        } else {
+                            originalUriStr
+                        }
+
                         tracksToInsert.add(
                             MediaTrackEntity(
                                 title = tTitle,
-                                uriString = uriStr,
+                                uriString = effectiveUriStr,
                                 trackType = tType,
                                 durationSec = durationSec,
                                 displayTimestamp = displayTs,
@@ -245,7 +322,7 @@ class BackupManager(private val context: Context, private val songDao: SongDao) 
                 }
             }
 
-            Result.success(RestoreSummary(restoredSongsCount, catArray.length()))
+            Result.success(RestoreSummary(restoredSongsCount, catArray.length(), mediaRestoredCount))
         } catch (e: Exception) {
             Result.failure(Exception("خطا در بازیابی اطلاعات: ${e.localizedMessage ?: "فایل نامعتبر است"}"))
         }

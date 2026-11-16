@@ -85,6 +85,10 @@ import com.naghmeh.app.data.CategoryEntity
 import com.naghmeh.app.data.TrackType
 import com.naghmeh.app.ui.AddEditUiState
 import com.naghmeh.app.ui.DraftTrack
+import android.os.Build
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextAlign
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,6 +131,28 @@ fun AddEditScreen(
     var showInlineCategoryInput by remember { mutableStateOf(false) }
     var newCategoryDraft by remember { mutableStateOf("") }
     var trackPendingDeletion by remember { mutableStateOf<Pair<TrackType, DraftTrack>?>(null) }
+
+    val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    var audioPermissionDenied by remember { mutableStateOf(false) }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            audioPermissionDenied = false
+            showPickerSourceDialog = false
+            audioSearchQuery = ""
+            onLoadDeviceAudios()
+            showDeviceAudioPickerDialog = true
+        } else {
+            audioPermissionDenied = true
+        }
+    }
 
     val galleryVideoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -543,7 +569,8 @@ fun AddEditScreen(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(54.dp)
+                            .heightIn(min = 52.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
                     ) {
                         Icon(
                             imageVector = if (isRecording) Icons.Rounded.Stop else Icons.Rounded.Mic,
@@ -553,9 +580,9 @@ fun AddEditScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (isRecording) {
-                                "توقف و ذخیره ضبط (${formatSecondsMmSs(recordingDurationSec)})"
+                                "توقف ضبط (${formatSecondsMmSs(recordingDurationSec)})"
                             } else {
-                                "شروع ضبط صدای تمرین (۰۰:۰۰)"
+                                "ضبط صدای تمرین"
                             },
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
@@ -650,6 +677,7 @@ fun AddEditScreen(
             onDismissRequest = {
                 showPickerSourceDialog = false
                 activePickerTargetKey = null
+                audioPermissionDenied = false
             },
             containerColor = MaterialTheme.colorScheme.surface,
             title = {
@@ -668,15 +696,26 @@ fun AddEditScreen(
 
                     FilledTonalButton(
                         onClick = {
-                            showPickerSourceDialog = false
-                            audioSearchQuery = ""
-                            onLoadDeviceAudios()
-                            showDeviceAudioPickerDialog = true
+                            val hasPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                audioPermission
+                            ) == PackageManager.PERMISSION_GRANTED
+
+                            if (hasPermission) {
+                                audioPermissionDenied = false
+                                showPickerSourceDialog = false
+                                audioSearchQuery = ""
+                                onLoadDeviceAudios()
+                                showDeviceAudioPickerDialog = true
+                            } else {
+                                audioPermissionLauncher.launch(audioPermission)
+                            }
                         },
                         shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .heightIn(min = 52.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.QueueMusic,
@@ -684,7 +723,15 @@ fun AddEditScreen(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "آهنگ‌های گوشی (فهرست و جستجو)", fontWeight = FontWeight.Bold)
+                        Text(text = "آهنگ‌های گوشی", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (audioPermissionDenied) {
+                        Text(
+                            text = "برای نمایش خودکار آهنگ‌های گوشی، دسترسی لازم است. همچنین می‌توانید از بخش «پوشه‌ها و فایل‌ها» استفاده کنید.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
 
                     FilledTonalButton(
@@ -693,9 +740,10 @@ fun AddEditScreen(
                             galleryVideoLauncher.launch("video/*")
                         },
                         shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .heightIn(min = 52.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.VideoLibrary,
@@ -703,7 +751,7 @@ fun AddEditScreen(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "انتخاب ویدیو از گالری", fontWeight = FontWeight.Bold)
+                        Text(text = "ویدیو از گالری", fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
@@ -712,9 +760,10 @@ fun AddEditScreen(
                             mediaPickerLauncher.launch(arrayOf("audio/*", "video/*"))
                         },
                         shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .heightIn(min = 52.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.FolderOpen,
@@ -722,7 +771,7 @@ fun AddEditScreen(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "پوشه‌ها و فایل‌منیجر گوشی")
+                        Text(text = "پوشه‌ها و فایل‌ها")
                     }
                 }
             },
@@ -732,6 +781,7 @@ fun AddEditScreen(
                     onClick = {
                         showPickerSourceDialog = false
                         activePickerTargetKey = null
+                        audioPermissionDenied = false
                     }
                 ) {
                     Text(text = "انصراف")
@@ -804,12 +854,40 @@ fun AddEditScreen(
                             Text(text = "در حال بارگذاری آهنگ‌ها...")
                         }
                     } else if (filteredAudios.isEmpty()) {
-                        Text(
-                            text = if (audioSearchQuery.isBlank()) "هیچ فایل صوتی در گوشی یافت نشد." else "آهنگی با این نام پیدا نشد.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 16.dp)
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = if (audioSearchQuery.isBlank()) {
+                                    "هیچ فایل صوتی در گوشی یافت نشد."
+                                } else {
+                                    "آهنگی با این نام پیدا نشد."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    showDeviceAudioPickerDialog = false
+                                    mediaPickerLauncher.launch(arrayOf("audio/*", "video/*"))
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = "انتخاب مستقیم از فایل‌ها")
+                            }
+                        }
                     } else {
                         LazyColumn(
                             modifier = Modifier

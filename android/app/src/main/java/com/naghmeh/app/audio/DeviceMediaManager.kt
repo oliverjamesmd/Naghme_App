@@ -25,36 +25,35 @@ class DeviceMediaManager(private val context: Context) {
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DISPLAY_NAME,
-            MediaStore.Audio.Media.IS_MUSIC
+            MediaStore.Audio.Media.DISPLAY_NAME
         )
 
-        val selection = "${MediaStore.Audio.Media.DURATION} >= ?"
-        val selectionArgs = arrayOf("5000") // at least 5 seconds
+        // Broader query: do not filter strictly by duration so Telegram/Downloads audio files aren't missed
         val sortOrder = "${MediaStore.Audio.Media.DATE_ADDED} DESC"
 
         try {
             val cursor = context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                selection,
-                selectionArgs,
+                null,
+                null,
                 sortOrder
             )
 
             cursor?.use { c ->
-                val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val nameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val idCol = c.getColumnIndex(MediaStore.Audio.Media._ID)
+                val titleCol = c.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                val artistCol = c.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                val durationCol = c.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                val nameCol = c.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
 
                 while (c.moveToNext()) {
-                    val id = c.getLong(idCol)
-                    val rawTitle = c.getString(titleCol)
-                    val rawArtist = c.getString(artistCol)
-                    val duration = c.getLong(durationCol)
-                    val displayName = c.getString(nameCol) ?: "فایل صوتی"
+                    val id = if (idCol >= 0) c.getLong(idCol) else continue
+                    val rawTitle = if (titleCol >= 0) c.getString(titleCol) else null
+                    val rawArtist = if (artistCol >= 0) c.getString(artistCol) else null
+                    val duration = if (durationCol >= 0) c.getLong(durationCol) else 0L
+                    val displayName = if (nameCol >= 0) c.getString(nameCol) ?: "آهنگ" else "آهنگ"
+
                     val contentUri = ContentUris.withAppendedId(
                         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                         id
